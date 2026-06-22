@@ -426,3 +426,52 @@ h1, h2, h3, h4, h5, h6 {
 .stat-row.great { color: var(--great); }
 .stat-row.good { color: var(--good); }
 .stat-row.miss { color: var(--error); }
+
+/* Progress Bar */
+.progress-bar-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  z-index: 50;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--primary);
+  width: 0%;
+  box-shadow: 0 0 10px var(--primary-glow);
+  transition: width 0.1s linear;
+}
+
+/* Pause Overlay */
+.pause-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(11, 15, 25, 0.8);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: fadeIn 0.2s ease forwards;
+}
+
+.pause-menu {
+  background: var(--surface);
+  padding: 3rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-width: 300px;
+}

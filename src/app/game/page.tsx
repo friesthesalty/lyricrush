@@ -51,6 +51,7 @@ export default function GamePage() {
   const [videoId, setVideoId] = useState('');
   
   const [gameState, setGameState] = useState<'playing' | 'ended'>('playing');
+  const [isPaused, setIsPaused] = useState(false);
   const [score, setScore] = useState(0);
   const [stats, setStats] = useState<Stats>({ perfect: 0, great: 0, good: 0, miss: 0 });
   const [hitEffects, setHitEffects] = useState<HitEffect[]>([]);
@@ -60,6 +61,7 @@ export default function GamePage() {
 
   const playerRef = useRef<any>(null);
   const reqRef = useRef<number | undefined>(undefined);
+  const progressRef = useRef<HTMLDivElement>(null);
   const lyricsRef = useRef<LyricLine[]>([]);
   const questionRef = useRef<Question | null>(null);
   const askedQuestionsRef = useRef<Set<number>>(new Set());
@@ -226,6 +228,13 @@ export default function GamePage() {
       const playerTime = playerRef.current.getCurrentTime() + (offsetMs / 1000);
       const allLyrics = lyricsRef.current;
 
+      if (progressRef.current && playerRef.current.getDuration) {
+        const duration = playerRef.current.getDuration();
+        if (duration > 0) {
+          progressRef.current.style.width = `${(playerRef.current.getCurrentTime() / duration) * 100}%`;
+        }
+      }
+
       let newIndex = -1;
       for (let i = 0; i < allLyrics.length; i++) {
         if (playerTime >= allLyrics[i].time) {
@@ -314,8 +323,28 @@ export default function GamePage() {
     }
   }, [offsetMs]);
 
+  const togglePause = useCallback(() => {
+    if (gameState !== 'playing') return;
+    setIsPaused(prev => {
+      const next = !prev;
+      if (next) {
+        playerRef.current?.pauseVideo();
+      } else {
+        playerRef.current?.playVideo();
+      }
+      return next;
+    });
+  }, [gameState]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        togglePause();
+        return;
+      }
+      
+      if (isPaused) return;
+
       const keyMap: Record<string, number> = {
         'd': 0,
         'f': 1,
@@ -329,7 +358,7 @@ export default function GamePage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleAnswer]);
+  }, [handleAnswer, isPaused, togglePause]);
 
   if (loading) {
     return (
@@ -389,6 +418,20 @@ export default function GamePage() {
 
   return (
     <main className="game-container">
+      <div className="progress-bar-container">
+        <div className="progress-bar-fill" ref={progressRef}></div>
+      </div>
+
+      {isPaused && (
+        <div className="pause-overlay">
+          <div className="pause-menu">
+            <h2>Paused</h2>
+            <button className="btn" onClick={togglePause}>Resume</button>
+            <button className="btn" onClick={() => router.push('/')} style={{ background: 'var(--surface-hover)' }}>Quit to Menu</button>
+          </div>
+        </div>
+      )}
+
       <button 
         className="btn" 
         style={{ position: 'absolute', top: '2rem', left: '2rem', padding: '0.5rem 1rem', fontSize: '1rem' }}

@@ -71,6 +71,7 @@ function GameContent() {
   const pastTargetsRef = useRef<Set<number>>(new Set());
   const markovChainRef = useRef<Map<string, string[]>>(new Map());
   const markovStartsRef = useRef<string[]>([]);
+  const [skippedToIndex, setSkippedToIndex] = useState<number>(-1);
 
   // Parse LRC format
   const parseLrc = (lrc: string) => {
@@ -365,7 +366,7 @@ function GameContent() {
     // Choices activate when the preceding phrase starts playing, or immediately if single-line
     let activateTime = currentTime;
     if (precedingIndices.length > 1) {
-      activateTime = allLyrics[precedingIndices[0]].time;
+      activateTime = allLyrics[precedingIndices[precedingIndices.length - 1]].time;
     } else {
       activateTime = currentTime;
     }
@@ -550,6 +551,7 @@ function GameContent() {
     setQuestion(null);
     questionRef.current = null;
     askedQuestionsRef.current = new Set();
+    setSkippedToIndex(-1);
   }, []);
 
   const skipToNextLyrics = useCallback(() => {
@@ -575,6 +577,7 @@ function GameContent() {
     // Seek to 6 seconds before the next lyric so the question has time to spawn
     // (The game loop requires timeUntil >= 5.0 to spawn a question)
     const seekTime = Math.max(0, allLyrics[nextIdx].time - 6) - (offsetMs / 1000);
+    setSkippedToIndex(nextIdx);
     playerRef.current.seekTo(seekTime, true);
   }, [offsetMs]);
 
@@ -735,9 +738,10 @@ function GameContent() {
               // Normal single-line state: brightly lit active lyric
               <div className="lyric-line active">{activeLyric}</div>
             )}
-            {(!question || question.status !== 'pending') && <div className="lyric-line">{nextLyric ? '...' : ''}</div>}
+            {!question && <div className="lyric-line">{nextLyric ? '...' : ''}</div>}
             {(!question || question.status !== 'pending') && gameState === 'playing' && (() => {
               const nextIdx = lyrics.findIndex(l => l.time > (playerRef.current?.getCurrentTime?.() ?? 0) + (offsetMs / 1000));
+              if (skippedToIndex === nextIdx) return false;
               const gap = nextIdx >= 0 ? lyrics[nextIdx].time - ((playerRef.current?.getCurrentTime?.() ?? 0) + (offsetMs / 1000)) : Infinity;
               return gap >= 10;
             })() && (

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface iTunesResult {
@@ -23,6 +23,37 @@ export default function Home() {
   // Manual mode state
   const [manualYoutubeId, setManualYoutubeId] = useState('');
   const [manualLrc, setManualLrc] = useState('');
+
+  useEffect(() => {
+    const savedMode = sessionStorage.getItem('home_mode');
+    if (savedMode === 'auto' || savedMode === 'manual') setMode(savedMode);
+    
+    const savedQuery = sessionStorage.getItem('home_query');
+    if (savedQuery) setQuery(savedQuery);
+    
+    const savedResults = sessionStorage.getItem('home_results');
+    if (savedResults) {
+      try { setResults(JSON.parse(savedResults)); } catch (e) {}
+    }
+    
+    const savedOffset = sessionStorage.getItem('home_offset');
+    if (savedOffset) setOffsetMs(Number(savedOffset));
+
+    const savedManualYt = sessionStorage.getItem('manual_youtube_id');
+    if (savedManualYt) setManualYoutubeId(savedManualYt);
+
+    const savedManualLrc = sessionStorage.getItem('manual_lrc');
+    if (savedManualLrc) setManualLrc(savedManualLrc);
+  }, []);
+
+  useEffect(() => {
+    sessionStorage.setItem('home_mode', mode);
+    sessionStorage.setItem('home_query', query);
+    sessionStorage.setItem('home_results', JSON.stringify(results));
+    sessionStorage.setItem('home_offset', offsetMs.toString());
+    sessionStorage.setItem('manual_youtube_id', manualYoutubeId);
+    sessionStorage.setItem('manual_lrc', manualLrc);
+  }, [mode, query, results, offsetMs, manualYoutubeId, manualLrc]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();

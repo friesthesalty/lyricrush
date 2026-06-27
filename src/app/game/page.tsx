@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { useSettings } from '../../lib/useSettings';
+import SettingsPanel from '../../components/SettingsPanel';
 
 interface LyricLine {
   time: number;
@@ -58,7 +60,16 @@ function GameContent() {
   const [stats, setStats] = useState<Stats>({ perfect: 0, great: 0, good: 0, miss: 0 });
   const [hitEffects, setHitEffects] = useState<HitEffect[]>([]);
 
+  const { settings, updateSettings } = useSettings();
+  const [showSettings, setShowSettings] = useState(false);
   const [currentLineIndex, setCurrentLineIndex] = useState(-1);
+
+  // Apply volume changes
+  useEffect(() => {
+    if (playerRef.current && playerRef.current.setVolume) {
+      playerRef.current.setVolume(settings.volume);
+    }
+  }, [settings.volume]);
   const [question, setQuestion] = useState<Question | null>(null);
 
   const playerRef = useRef<any>(null);
@@ -216,6 +227,7 @@ function GameContent() {
         },
         events: {
           onReady: (event: any) => {
+            event.target.setVolume(settings.volume);
             event.target.playVideo();
             startGameLoop();
           },
@@ -590,20 +602,14 @@ function GameContent() {
       
       if (isPaused) return;
 
-      const keyMap: Record<string, number> = {
-        'd': 0,
-        'f': 1,
-        'j': 2,
-        'k': 3
-      };
-      const index = keyMap[e.key.toLowerCase()];
-      if (index !== undefined && questionRef.current?.status === 'pending') {
+      const index = settings.keybinds.indexOf(e.key.toLowerCase());
+      if (index !== -1 && questionRef.current?.status === 'pending') {
         handleAnswer(index);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleAnswer, isPaused, togglePause]);
+  }, [handleAnswer, isPaused, togglePause, settings.keybinds]);
 
   if (loading) {
     return (
@@ -664,7 +670,7 @@ function GameContent() {
 
   const activeLyric = currentLineIndex >= 0 ? lyrics[currentLineIndex].text : '...';
   const nextLyric = currentLineIndex + 1 < lyrics.length ? lyrics[currentLineIndex + 1].text : '';
-  const keyLabels = ['D', 'F', 'J', 'K'];
+  const keyLabels = settings.keybinds.map(k => k.toUpperCase());
 
   return (
     <main className="game-container">
@@ -678,10 +684,13 @@ function GameContent() {
             <h2>Paused</h2>
             <button className="btn" onClick={togglePause}>Resume</button>
             <button className="btn" onClick={restartSong} style={{ background: '#f59e0b' }}>Restart Song</button>
+            <button className="btn" onClick={() => setShowSettings(true)} style={{ background: 'var(--primary)' }}>Settings</button>
             <button className="btn" onClick={() => router.push('/')} style={{ background: 'var(--surface-hover)' }}>Quit to Menu</button>
           </div>
         </div>
       )}
+
+      {showSettings && <SettingsPanel settings={settings} updateSettings={updateSettings} onClose={() => setShowSettings(false)} />}
 
       <button 
         className="btn" 

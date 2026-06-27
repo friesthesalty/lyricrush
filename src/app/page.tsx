@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSettings } from '../lib/useSettings';
+import SettingsPanel from '../components/SettingsPanel';
 
 interface iTunesResult {
   trackId: number;
@@ -12,6 +14,8 @@ interface iTunesResult {
 
 export default function Home() {
   const [mode, setMode] = useState<'auto' | 'manual'>('auto');
+  const [showSettings, setShowSettings] = useState(false);
+  const { settings, updateSettings } = useSettings();
   
   // Auto mode state
   const [query, setQuery] = useState('');
@@ -110,7 +114,17 @@ export default function Home() {
   };
 
   return (
-    <main className="container">
+    <main className="container" style={{ position: 'relative' }}>
+      <button 
+        style={{ position: 'fixed', top: '2rem', right: '2rem', background: 'none', border: 'none', fontSize: '2rem', cursor: 'pointer', transition: 'transform 0.2s', zIndex: 10 }} 
+        onClick={() => setShowSettings(true)}
+        title="Settings"
+        onMouseOver={(e) => e.currentTarget.style.transform = 'rotate(45deg)'}
+        onMouseOut={(e) => e.currentTarget.style.transform = 'rotate(0deg)'}
+      >
+        ⚙️
+      </button>
+      {showSettings && <SettingsPanel settings={settings} updateSettings={updateSettings} onClose={() => setShowSettings(false)} />}
       <h1 className="title">LyricRush</h1>
       <p className="subtitle">Can you guess the next line before it drops?</p>
 

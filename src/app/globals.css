@@ -79,9 +79,7 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 3.5rem;
   font-weight: 800;
   margin-bottom: 0.5rem;
-  background: linear-gradient(135deg, var(--primary), var(--secondary));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--primary);
 }
 
 .subtitle {
@@ -116,7 +114,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .btn {
-  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  background-color: var(--primary);
   border: none;
   padding: 1rem 2rem;
   border-radius: var(--radius);
@@ -276,6 +274,38 @@ h1, h2, h3, h4, h5, h6 {
   transform: scale(1.05);
 }
 
+/* Multi-line lyrics display */
+.multi-lyrics {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.lyric-line-multi {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  opacity: 0.35;
+  transition: all 0.3s ease;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.lyric-line-multi.on-beat {
+  color: white;
+  opacity: 1;
+  font-size: 1.5rem;
+  text-shadow: 0 0 18px rgba(255, 255, 255, 0.4);
+  transform: scale(1.06);
+}
+
+.lyric-line-multi.past {
+  opacity: 0.2;
+  color: var(--text-muted);
+}
+
 /* Question Area */
 .question-area {
   width: 100%;
@@ -293,6 +323,68 @@ h1, h2, h3, h4, h5, h6 {
   margin-bottom: 1.5rem;
   font-size: 1.5rem;
   color: var(--text-main);
+}
+
+/* Timing Bar */
+.timing-bar {
+  position: relative;
+  width: 100%;
+  height: 32px;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.timing-zone {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.timing-zone-perfect {
+  background-color: rgba(139, 92, 246, 0.4);
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.timing-zone-great {
+  background-color: rgba(59, 130, 246, 0.3);
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.timing-zone-good {
+  background-color: rgba(16, 185, 129, 0.25);
+}
+
+.timing-zone-label {
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  pointer-events: none;
+  user-select: none;
+}
+
+.timing-needle {
+  position: absolute;
+  top: -2px;
+  left: 0%;
+  width: 3px;
+  height: calc(100% + 4px);
+  background: white;
+  border-radius: 2px;
+  z-index: 10;
+  box-shadow:
+    0 0 8px rgba(255, 255, 255, 0.8),
+    0 0 16px rgba(255, 255, 255, 0.4);
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 
 .options-grid {
@@ -332,6 +424,12 @@ h1, h2, h3, h4, h5, h6 {
   color: white;
   animation: pulse-error 1.5s infinite;
   border-color: transparent;
+}
+
+.option-btn.waiting {
+  opacity: 0.4;
+  border-color: rgba(255, 255, 255, 0.08);
+  cursor: not-allowed;
 }
 
 .option-btn:disabled {
@@ -475,3 +573,28 @@ h1, h2, h3, h4, h5, h6 {
   gap: 1.5rem;
   min-width: 300px;
 }
+
+/* Skip Button */
+.skip-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-muted);
+  padding: 0.6rem 1.5rem;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: 'Outfit', sans-serif;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 0.5rem;
+  backdrop-filter: blur(4px);
+}
+
+.skip-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-main);
+  border-color: var(--primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px var(--primary-glow);
+}
+

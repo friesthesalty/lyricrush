@@ -11,11 +11,18 @@ interface iTunesResult {
 }
 
 export default function Home() {
+  const [mode, setMode] = useState<'auto' | 'manual'>('auto');
+  
+  // Auto mode state
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<iTunesResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [offsetMs, setOffsetMs] = useState(0);
   const router = useRouter();
+
+  // Manual mode state
+  const [manualYoutubeId, setManualYoutubeId] = useState('');
+  const [manualLrc, setManualLrc] = useState('');
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,10 +40,39 @@ export default function Home() {
     }
   };
 
-  const handlePlay = (song: iTunesResult) => {
+  const handlePlayAuto = (song: iTunesResult) => {
+    // If the user pasted custom data in the manual tab, use it for this auto song
+    if (manualLrc.trim()) {
+      sessionStorage.setItem('manual_lrc', manualLrc);
+    } else {
+      sessionStorage.removeItem('manual_lrc');
+    }
+    
+    if (manualYoutubeId.trim()) {
+      sessionStorage.setItem('manual_youtube_id', manualYoutubeId);
+    } else {
+      sessionStorage.removeItem('manual_youtube_id');
+    }
+
     const params = new URLSearchParams({
+      mode: 'auto',
       trackName: song.trackName,
       artistName: song.artistName,
+      offset: offsetMs.toString(),
+    });
+    router.push(`/game?${params.toString()}`);
+  };
+
+  const handlePlayManual = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualYoutubeId.trim() || !manualLrc.trim()) return;
+    
+    // Save the potentially large LRC string to sessionStorage
+    sessionStorage.setItem('manual_lrc', manualLrc);
+    sessionStorage.setItem('manual_youtube_id', manualYoutubeId);
+    
+    const params = new URLSearchParams({
+      mode: 'manual',
       offset: offsetMs.toString(),
     });
     router.push(`/game?${params.toString()}`);
@@ -47,7 +83,24 @@ export default function Home() {
       <h1 className="title">LyricRush</h1>
       <p className="subtitle">Can you guess the next line before it drops?</p>
 
-      <div className="settings-box">
+      <div className="settings-box" style={{ marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginBottom: '1rem' }}>
+          <button 
+            className={`btn ${mode === 'auto' ? '' : 'secondary'}`} 
+            onClick={() => setMode('auto')}
+            style={{ opacity: mode === 'auto' ? 1 : 0.6 }}
+          >
+            Auto Find
+          </button>
+          <button 
+            className={`btn ${mode === 'manual' ? '' : 'secondary'}`} 
+            onClick={() => setMode('manual')}
+            style={{ opacity: mode === 'manual' ? 1 : 0.6 }}
+          >
+            Manual Input
+          </button>
+        </div>
+
         <label htmlFor="offset">Global Audio Sync Offset (ms)</label>
         <input 
           type="number" 
@@ -58,33 +111,68 @@ export default function Home() {
         />
       </div>
 
-      <form onSubmit={handleSearch} className="input-group">
-        <input
-          type="text"
-          className="input"
-          placeholder="Search for a song..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <button type="submit" className="btn" disabled={loading}>
-          {loading ? 'Searching...' : 'Search'}
-        </button>
-      </form>
+      {mode === 'auto' && (
+        <>
+          <form onSubmit={handleSearch} className="input-group">
+            <input
+              type="text"
+              className="input"
+              placeholder="Search for a song..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <button type="submit" className="btn" disabled={loading}>
+              {loading ? 'Searching...' : 'Search'}
+            </button>
+          </form>
 
-      {loading && <div className="spinner"></div>}
+          {loading && <div className="spinner"></div>}
 
-      <div className="results">
-        {results.map((song) => (
-          <div key={song.trackId} className="result-card" onClick={() => handlePlay(song)}>
-            <img src={song.artworkUrl100} alt={song.trackName} className="result-image" />
-            <div className="result-info">
-              <div className="result-title">{song.trackName}</div>
-              <div className="result-artist">{song.artistName}</div>
-            </div>
-            <div className="btn" style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}>Play</div>
+          <div className="results">
+            {results.map((song) => (
+              <div key={song.trackId} className="result-card" onClick={() => handlePlayAuto(song)}>
+                <img src={song.artworkUrl100} alt={song.trackName} className="result-image" />
+                <div className="result-info">
+                  <div className="result-title">{song.trackName}</div>
+                  <div className="result-artist">{song.artistName}</div>
+                </div>
+                <div className="btn" style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}>Play</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
+
+      {mode === 'manual' && (
+        <form onSubmit={handlePlayManual} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', maxWidth: '600px' }}>
+          <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', padding: '1rem', borderRadius: '8px', fontSize: '0.9rem', color: '#ccc', borderLeft: '4px solid var(--primary)' }}>
+            <strong>Tip:</strong> You don't have to fill out both fields! If you only want to provide custom lyrics (and auto-find the video), OR if you only want to provide a custom YouTube video (and auto-find the lyrics), just fill what you want here and then search for your song using the <strong>Auto Find</strong> tab!
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text)' }}>YouTube Video ID</label>
+            <input
+              type="text"
+              className="input"
+              placeholder="e.g. dQw4w9WgXcQ"
+              value={manualYoutubeId}
+              onChange={(e) => setManualYoutubeId(e.target.value)}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text)' }}>LRC Data</label>
+            <textarea
+              className="input"
+              placeholder="[00:00.00] Lyrics here..."
+              value={manualLrc}
+              onChange={(e) => setManualLrc(e.target.value)}
+              style={{ minHeight: '200px', resize: 'vertical', fontFamily: 'monospace' }}
+            />
+          </div>
+          <button type="submit" className="btn">
+            Play Custom Song
+          </button>
+        </form>
+      )}
     </main>
   );
 }

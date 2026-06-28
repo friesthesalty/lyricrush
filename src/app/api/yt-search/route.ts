@@ -10,8 +10,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    let videos = await yt.search(q, { limit: 5, type: 'video' });
-    videos = videos.filter(v => v && v.id);
+    let videos = await yt.search(q, { limit: 5 });
+    videos = videos.filter(v => v && v.id && v.title);
     if (!videos || videos.length === 0) {
       return NextResponse.json({ error: 'No video found' }, { status: 404 });
     }

@@ -47,7 +47,24 @@ function GameContent() {
   
   const trackName = searchParams.get('trackName');
   const artistName = searchParams.get('artistName');
-  const offsetMs = parseInt(searchParams.get('offset') || '0', 10);
+  const [offsetMsState, setOffsetMsState] = useState(() => parseInt(searchParams.get('offset') || '0', 10));
+  const offsetMsRef = useRef(offsetMsState);
+  
+  const setOffsetMs = useCallback((val: number | ((prev: number) => number)) => {
+    setOffsetMsState(prev => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      offsetMsRef.current = next;
+      return next;
+    });
+  }, []);
+  const offsetMs = offsetMsState;
+
+  useEffect(() => {
+    const urlOffset = searchParams.get('offset');
+    if (urlOffset) {
+      setOffsetMs(parseInt(urlOffset, 10));
+    }
+  }, [searchParams, setOffsetMs]);
 
   const [loading, setLoading] = useState(true);
   const [loadProgress, setLoadProgress] = useState(10);
@@ -57,7 +74,7 @@ function GameContent() {
   const [videoId, setVideoId] = useState('');
   const [ytDebug, setYtDebug] = useState<any>(null);
   
-  const [gameState, setGameState] = useState<'playing' | 'ended'>('playing');
+  const [gameState, setGameState] = useState<'playing' | 'ended' | 'calibration'>('playing');
   const [isPaused, setIsPaused] = useState(false);
   const [score, setScore] = useState(0);
   const [stats, setStats] = useState<Stats>({ perfect: 0, great: 0, good: 0, miss: 0 });
@@ -66,6 +83,75 @@ function GameContent() {
   const { settings, updateSettings } = useSettings();
   const [showSettings, setShowSettings] = useState(false);
   const [currentLineIndex, setCurrentLineIndex] = useState(-1);
+  const [calibrationTaps, setCalibrationTaps] = useState<number[]>([]);
+  const [calibrationLyricIndex, setCalibrationLyricIndex] = useState(0);
+  const calibrationLyricIndexRef = useRef(0);
+  useEffect(() => {
+    calibrationLyricIndexRef.current = calibrationLyricIndex;
+  }, [calibrationLyricIndex]);
+  
+  const gameStateRef = useRef(gameState);
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
+
+  const ignoreGameLogicUntilRef = useRef(0);
+
+  const [sessionTargets, setSessionTargets] = useState<{ target: number; activate: number }[]>([]);
+  const durationRef = useRef(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+
+  useEffect(() => {
+    if (!lyrics.length) return;
+    const targets: { target: number; activate: number }[] = [];
+    let baseTime = 0;
+    let scanStart = 0;
+    
+    while (scanStart < lyrics.length) {
+      let found = false;
+      for (let i = scanStart; i < lyrics.length; i++) {
+        const timeUntil = lyrics[i].time - baseTime;
+        if (timeUntil >= 5.0) {
+          const precedingIndices: number[] = [];
+          if (i > 0) {
+            let currentIdx = i - 1;
+            const pastTargets = targets.map(t => t.target);
+            while (currentIdx >= 0 && !pastTargets.includes(currentIdx)) {
+              if (currentIdx === i - 1) {
+                precedingIndices.unshift(currentIdx);
+              } else {
+                const gap = lyrics[currentIdx + 1].time - lyrics[currentIdx].time;
+                if (gap < 5.0) {
+                  precedingIndices.unshift(currentIdx);
+                } else {
+                  break;
+                }
+              }
+              currentIdx--;
+            }
+          }
+
+          const generateTime = Math.max(baseTime, lyrics[i].time - 30.0);
+          let activateTime = generateTime;
+          if (precedingIndices.length > 1) {
+            activateTime = lyrics[precedingIndices[0]].time;
+          }
+
+          targets.push({ target: i, activate: activateTime });
+          found = true;
+          if (i + 1 < lyrics.length) {
+            baseTime = lyrics[i + 1].time;
+            scanStart = i + 2;
+          } else {
+            scanStart = lyrics.length;
+          }
+          break;
+        }
+      }
+      if (!found) break;
+    }
+    setSessionTargets(targets);
+  }, [lyrics]);
 
   // Apply volume changes
   useEffect(() => {
@@ -173,30 +259,61 @@ function GameContent() {
 
       try {
         setLoadProgress(30);
-        setLoadMessage('Finding optimal audio source...');
+        setLoadMessage('Fetching song data...');
+        
         let ytId: string | null = sessionStorage.getItem('manual_youtube_id');
+        let rawLrc: string | null = sessionStorage.getItem('manual_lrc');
+
+        const fetchPromises = [];
+        
+        // Setup YouTube fetch promise
         if (!ytId) {
           const safeArtist = artistName || '';
           const safeTrack = trackName || '';
-          const ytRes = await fetch(`/api/yt-search?q=${encodeURIComponent(safeArtist + ' ' + safeTrack + ' audio')}&artist=${encodeURIComponent(safeArtist)}&track=${encodeURIComponent(safeTrack)}`);
-          const ytData = await ytRes.json();
-          if (!ytData.videoId) throw new Error('Video not found');
-          ytId = ytData.videoId as string;
-          if (ytData.debug) setYtDebug(ytData.debug);
+          fetchPromises.push(
+            fetch(`/api/yt-search?q=${encodeURIComponent(safeArtist + ' ' + safeTrack + ' audio')}&artist=${encodeURIComponent(safeArtist)}&track=${encodeURIComponent(safeTrack)}`)
+              .then(res => res.json())
+              .then(data => {
+                if (!data.videoId) throw new Error('Video not found');
+                return { type: 'yt', data };
+              })
+          );
+        } else {
+          fetchPromises.push(Promise.resolve({ type: 'yt', data: { videoId: ytId } }));
         }
-        
-        setLoadProgress(60);
-        setLoadMessage('Downloading synced lyrics...');
-        let rawLrc = sessionStorage.getItem('manual_lrc');
+
+        // Setup Lyrics fetch promise
         if (!rawLrc) {
-          const lrcRes = await fetch(`/api/lyrics?track_name=${encodeURIComponent(trackName)}&artist_name=${encodeURIComponent(artistName)}`);
-          const lrcData = await lrcRes.json();
-          
-          if (!lrcData.length || !lrcData[0].syncedLyrics) {
-            throw new Error('synced lyrics not found');
-          }
-          rawLrc = lrcData[0].syncedLyrics;
+          fetchPromises.push(
+            fetch(`/api/lyrics?track_name=${encodeURIComponent(trackName)}&artist_name=${encodeURIComponent(artistName)}`)
+              .then(res => res.json())
+              .then(data => {
+                if (!data.length || !data[0].syncedLyrics) throw new Error('synced lyrics not found');
+                return { type: 'lrc', data };
+              })
+          );
+        } else {
+          fetchPromises.push(Promise.resolve({ type: 'lrc', data: [{ syncedLyrics: rawLrc }] }));
         }
+
+        setLoadProgress(60);
+        const results = await Promise.allSettled(fetchPromises);
+        
+        const ytResult = results[0];
+        const lrcResult = results[1];
+
+        if (ytResult.status === 'rejected' && lrcResult.status === 'rejected') {
+          throw new Error('Neither the video nor synced lyrics could be found.');
+        } else if (ytResult.status === 'rejected') {
+          throw new Error('Video not found (But lyrics are ready! Use the Manual Input tab to supply a YouTube link)');
+        } else if (lrcResult.status === 'rejected') {
+          throw new Error('synced lyrics not found (But video was found! Use the Manual Input tab to supply custom lyrics)');
+        }
+
+        ytId = (ytResult.value as any).data.videoId;
+        if ((ytResult.value as any).data.debug) setYtDebug((ytResult.value as any).data.debug);
+
+        rawLrc = (lrcResult.value as any).data[0].syncedLyrics;
 
         setLoadProgress(90);
         setLoadMessage('Building game data...');
@@ -282,7 +399,7 @@ function GameContent() {
 
   const generateQuestion = (targetIndex: number) => {
     const allLyrics = lyricsRef.current;
-    const currentTime = playerRef.current.getCurrentTime() + (offsetMs / 1000);
+    const currentTime = playerRef.current.getCurrentTime() + (offsetMsRef.current / 1000);
     const targetText = allLyrics[targetIndex].text;
 
     // Group all consecutive preceding lines (gap < 5s) into the same phrase block
@@ -429,13 +546,22 @@ function GameContent() {
     const loop = () => {
       if (!playerRef.current || !playerRef.current.getCurrentTime) return;
       
-      const playerTime = playerRef.current.getCurrentTime() + (offsetMs / 1000);
+      if (gameStateRef.current === 'calibration' || Date.now() < ignoreGameLogicUntilRef.current) {
+        reqRef.current = requestAnimationFrame(loop);
+        return;
+      }
+
+      const playerTime = playerRef.current.getCurrentTime() + (offsetMsRef.current / 1000);
       const allLyrics = lyricsRef.current;
 
       if (progressRef.current && playerRef.current.getDuration) {
         const duration = playerRef.current.getDuration();
         if (duration > 0) {
           progressRef.current.style.width = `${(playerRef.current.getCurrentTime() / duration) * 100}%`;
+          if (durationRef.current === 0) {
+            durationRef.current = duration;
+            setVideoDuration(duration);
+          }
         }
       }
 
@@ -518,11 +644,11 @@ function GameContent() {
     const q = questionRef.current;
     if (!q || q.status !== 'pending' || !playerRef.current) return;
     // Block answers until activated (last preceding line has started)
-    const currentTime = playerRef.current.getCurrentTime() + (offsetMs / 1000);
+    const currentTime = playerRef.current.getCurrentTime() + (offsetMsRef.current / 1000);
     if (currentTime < q.activateTime) return;
 
     if (index === q.correctIndex) {
-      const answeredAt = playerRef.current.getCurrentTime() + (offsetMs / 1000);
+      const answeredAt = playerRef.current.getCurrentTime() + (offsetMsRef.current / 1000);
       const providedTime = q.targetTime - q.activateTime;
       const reactionTime = answeredAt - q.activateTime;
       const ratio = providedTime > 0 ? reactionTime / providedTime : 1;
@@ -554,16 +680,16 @@ function GameContent() {
       questionRef.current = updated;
       setQuestion(updated);
     }
-  }, [offsetMs]);
+  }, []);
 
   const togglePause = useCallback(() => {
     if (gameState !== 'playing') return;
     setIsPaused(prev => {
       const next = !prev;
       if (next) {
-        playerRef.current?.pauseVideo();
+        playerRef.current?.pauseVideo?.();
       } else {
-        playerRef.current?.playVideo();
+        playerRef.current?.playVideo?.();
       }
       return next;
     });
@@ -571,6 +697,7 @@ function GameContent() {
 
   const restartSong = useCallback(() => {
     if (!playerRef.current) return;
+    ignoreGameLogicUntilRef.current = Date.now() + 1500; // Ignore logic for 1.5s to allow seek to settle
     playerRef.current.seekTo(0, true);
     playerRef.current.playVideo();
     setGameState('playing');
@@ -585,10 +712,41 @@ function GameContent() {
     setSkippedToIndex(-1);
   }, []);
 
+  const enterCalibration = useCallback(() => {
+    setIsPaused(false);
+    setGameState('calibration');
+    setCalibrationTaps([]);
+    
+    // Find the next upcoming lyric line based on current time + current offset
+    if (playerRef.current && lyricsRef.current.length) {
+      const currentTime = playerRef.current.getCurrentTime() + (offsetMsRef.current / 1000);
+      let nextIdx = 0;
+      for (let i = 0; i < lyricsRef.current.length; i++) {
+        if (lyricsRef.current[i].time > currentTime) {
+          nextIdx = i;
+          break;
+        }
+      }
+      setCalibrationLyricIndex(nextIdx);
+      playerRef.current.playVideo();
+    }
+  }, []);
+
+  const finishCalibration = useCallback(() => {
+    setGameState('playing');
+    
+    // Sync the newly calibrated offset to the URL so it persists
+    const newParams = new URLSearchParams(searchParams.toString());
+    newParams.set('offset', offsetMsRef.current.toString());
+    router.replace(`?${newParams.toString()}`);
+
+    restartSong();
+  }, [restartSong, searchParams, router]);
+
   const skipToNextLyrics = useCallback(() => {
     if (!playerRef.current) return;
     const allLyrics = lyricsRef.current;
-    const currentTime = playerRef.current.getCurrentTime() + (offsetMs / 1000);
+    const currentTime = playerRef.current.getCurrentTime() + (offsetMsRef.current / 1000);
     // Find the next lyric line that hasn't started yet
     let nextIdx = -1;
     for (let i = 0; i < allLyrics.length; i++) {
@@ -607,13 +765,50 @@ function GameContent() {
     }
     // Seek to 6 seconds before the next lyric so the question has time to spawn
     // (The game loop requires timeUntil >= 5.0 to spawn a question)
-    const seekTime = Math.max(0, allLyrics[nextIdx].time - 6) - (offsetMs / 1000);
+    const seekTime = Math.max(0, allLyrics[nextIdx].time - 6) - (offsetMsRef.current / 1000);
     setSkippedToIndex(nextIdx);
     playerRef.current.seekTo(seekTime, true);
-  }, [offsetMs]);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (gameState === 'calibration') {
+        if (e.code === 'ArrowRight') {
+          e.preventDefault();
+          if (playerRef.current) {
+            playerRef.current.seekTo(playerRef.current.getCurrentTime() + 5, true);
+          }
+          return;
+        }
+        if (e.code === 'ArrowLeft') {
+          e.preventDefault();
+          if (playerRef.current) {
+            playerRef.current.seekTo(Math.max(0, playerRef.current.getCurrentTime() - 5), true);
+          }
+          return;
+        }
+        
+        if (e.code === 'Space') {
+          e.preventDefault();
+          if (!playerRef.current || !lyricsRef.current.length) return;
+          if (calibrationLyricIndex >= lyricsRef.current.length) return;
+
+          const rawTime = playerRef.current.getCurrentTime(); // time in seconds without offset
+          const targetLyric = lyricsRef.current[calibrationLyricIndex];
+          const newOffsetMs = Math.round((targetLyric.time - rawTime) * 1000);
+          
+          const nextTaps = [...calibrationTaps, newOffsetMs].slice(-5);
+          const avg = Math.round(nextTaps.reduce((a, b) => a + b, 0) / nextTaps.length);
+          
+          setCalibrationTaps(nextTaps);
+          setOffsetMs(avg);
+          spawnHitEffect(`Avg Offset: ${avg}ms`, 'good');
+
+          setCalibrationLyricIndex(prev => prev + 1);
+        }
+        return;
+      }
+
       if (e.key === 'Escape') {
         togglePause();
         return;
@@ -628,7 +823,7 @@ function GameContent() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleAnswer, isPaused, togglePause, settings.keybinds]);
+  }, [handleAnswer, isPaused, togglePause, settings.keybinds, gameState, calibrationLyricIndex, calibrationTaps, setOffsetMs]);
 
   if (loading) {
     return (
@@ -737,6 +932,26 @@ function GameContent() {
     <main className="game-container">
       <div className="progress-bar-container">
         <div className="progress-bar-fill" ref={progressRef}></div>
+        {videoDuration > 0 && sessionTargets.map((session, idx) => {
+          const adjustedActivate = session.activate - (offsetMs / 1000);
+          const leftPercent = Math.max(0, Math.min((adjustedActivate / videoDuration) * 100, 100));
+          return (
+            <div 
+              key={idx}
+              style={{
+                position: 'absolute',
+                left: `${leftPercent}%`,
+                top: 0,
+                bottom: 0,
+                width: '3px',
+                background: 'rgba(255, 255, 255, 0.4)',
+                boxShadow: '0 0 4px rgba(255, 255, 255, 0.8)',
+                zIndex: 60,
+                transform: 'translateX(-50%)'
+              }}
+            />
+          );
+        })}
       </div>
 
       {isPaused && (
@@ -745,8 +960,31 @@ function GameContent() {
             <h2>Paused</h2>
             <button className="btn" onClick={togglePause}>Resume</button>
             <button className="btn" onClick={restartSong} style={{ background: '#f59e0b' }}>Restart Song</button>
+            <button className="btn" onClick={enterCalibration} style={{ background: '#3b82f6' }}>Calibrate Offset</button>
             <button className="btn" onClick={() => setShowSettings(true)} style={{ background: 'var(--primary)' }}>Settings</button>
             <button className="btn" onClick={() => router.push('/')} style={{ background: 'var(--surface-hover)' }}>Quit to Menu</button>
+          </div>
+        </div>
+      )}
+
+      {gameState === 'calibration' && (
+        <div className="calibration-overlay" style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.85)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+          <h2 style={{ fontSize: '2.5rem', marginBottom: '1rem', color: 'var(--primary)' }}>Calibration Mode</h2>
+          <p style={{ fontSize: '1.2rem', marginBottom: '2rem', textAlign: 'center', maxWidth: '600px', lineHeight: 1.5 }}>
+            Listen to the song and press <strong style={{ color: 'var(--good)' }}>SPACE</strong> exactly when you hear the singer start this lyric line:<br/>
+          </p>
+          <div style={{ fontSize: '4rem', fontWeight: 'bold', marginBottom: '1rem', color: 'var(--good)', textShadow: '0 0 20px rgba(74, 222, 128, 0.5)' }}>
+            {offsetMs > 0 ? '+' : ''}{offsetMs} ms
+          </div>
+          <div style={{ fontSize: '1rem', color: 'var(--text-muted)', marginBottom: '3rem' }}>
+            ({calibrationTaps.length > 0 ? `Averaged over last ${calibrationTaps.length} taps` : 'Tap SPACE to start calibrating'})
+            <br/>
+            <span style={{ fontSize: '0.9rem', opacity: 0.7 }}>(Use Left/Right Arrows to seek audio backward/forward)</span>
+          </div>
+          <button className="btn" onClick={finishCalibration} style={{ padding: '1rem 3rem', fontSize: '1.2rem' }}>Done</button>
+          
+          <div style={{ marginTop: '3rem', fontSize: '1.5rem', color: 'var(--text-main)', background: 'rgba(255,255,255,0.1)', padding: '1.5rem 3rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.2)' }}>
+             {lyrics[calibrationLyricIndex]?.text || '...'}
           </div>
         </div>
       )}
@@ -771,7 +1009,17 @@ function GameContent() {
       <button 
         className="btn" 
         style={{ position: 'absolute', top: '2rem', left: '2rem', padding: '0.5rem 1rem', fontSize: '1rem', zIndex: 100 }}
-        onClick={togglePause}
+        onClick={() => {
+          if (gameState === 'calibration') {
+             const urlOffset = searchParams.get('offset');
+             setOffsetMs(urlOffset ? parseInt(urlOffset, 10) : 0);
+             setGameState('playing');
+             setIsPaused(true);
+             playerRef.current?.pauseVideo?.();
+          } else {
+             togglePause();
+          }
+        }}
       >
         &larr; Back
       </button>
@@ -830,9 +1078,9 @@ function GameContent() {
             )}
             {!question && <div className="lyric-line">{nextLyric ? '...' : ''}</div>}
             {(!question || question.status !== 'pending') && gameState === 'playing' && (() => {
-              const nextIdx = lyrics.findIndex(l => l.time > (playerRef.current?.getCurrentTime?.() ?? 0) + (offsetMs / 1000));
+              const nextIdx = lyrics.findIndex(l => l.time > (playerRef.current?.getCurrentTime?.() ?? 0) + (offsetMsRef.current / 1000));
               if (skippedToIndex === nextIdx) return false;
-              const gap = nextIdx >= 0 ? lyrics[nextIdx].time - ((playerRef.current?.getCurrentTime?.() ?? 0) + (offsetMs / 1000)) : Infinity;
+              const gap = nextIdx >= 0 ? lyrics[nextIdx].time - ((playerRef.current?.getCurrentTime?.() ?? 0) + (offsetMsRef.current / 1000)) : Infinity;
               return gap >= 10;
             })() && (
               <button
@@ -873,8 +1121,14 @@ function GameContent() {
               if (waitingForActivation) {
                 btnClass += ' waiting';
               } else if (question.status !== 'pending') {
-                if (i === question.correctIndex) btnClass += ' correct';
-                else if (question.status === 'wrong') btnClass += ' wrong';
+                if (i === question.correctIndex) {
+                  btnClass += ' correct';
+                  if (currentLineIndex === question.targetIndex) {
+                    btnClass += ' is-playing';
+                  }
+                } else if (question.status === 'wrong') {
+                  btnClass += ' wrong';
+                }
               }
 
               return (
@@ -885,7 +1139,7 @@ function GameContent() {
                   disabled={question.status !== 'pending' || waitingForActivation}
                 >
                   <div className="keybind-badge">{keyLabels[i]}</div>
-                  {opt}
+                  <span className="option-text">{opt}</span>
                 </button>
               );
             })}

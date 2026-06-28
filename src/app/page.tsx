@@ -5,11 +5,17 @@ import { useRouter } from 'next/navigation';
 import { useSettings } from '../lib/useSettings';
 import SettingsPanel from '../components/SettingsPanel';
 
-interface iTunesResult {
-  trackId: number;
+interface SearchResult {
+  trackId: string | number;
   trackName: string;
   artistName: string;
   artworkUrl100: string;
+  source?: string;
+}
+
+function extractYoutubeId(input: string): string {
+  const match = input.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  return match ? match[1] : input.trim();
 }
 
 export default function Home() {
@@ -19,7 +25,7 @@ export default function Home() {
   
   // Auto mode state
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<iTunesResult[]>([]);
+  const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [offsetMs, setOffsetMs] = useState(0);
   const router = useRouter();
@@ -65,7 +71,7 @@ export default function Home() {
 
     setLoading(true);
     try {
-      const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=5`);
+      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       setResults(data.results || []);
     } catch (error) {
@@ -75,7 +81,7 @@ export default function Home() {
     }
   };
 
-  const handlePlayAuto = (song: iTunesResult) => {
+  const handlePlayAuto = (song: SearchResult) => {
     // If the user pasted custom data in the manual tab, use it for this auto song
     if (manualLrc.trim()) {
       sessionStorage.setItem('manual_lrc', manualLrc);
@@ -84,7 +90,7 @@ export default function Home() {
     }
     
     if (manualYoutubeId.trim()) {
-      sessionStorage.setItem('manual_youtube_id', manualYoutubeId);
+      sessionStorage.setItem('manual_youtube_id', extractYoutubeId(manualYoutubeId));
     } else {
       sessionStorage.removeItem('manual_youtube_id');
     }
@@ -100,11 +106,12 @@ export default function Home() {
 
   const handlePlayManual = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!manualYoutubeId.trim() || !manualLrc.trim()) return;
+    const parsedId = extractYoutubeId(manualYoutubeId);
+    if (!parsedId || !manualLrc.trim()) return;
     
     // Save the potentially large LRC string to sessionStorage
     sessionStorage.setItem('manual_lrc', manualLrc);
-    sessionStorage.setItem('manual_youtube_id', manualYoutubeId);
+    sessionStorage.setItem('manual_youtube_id', parsedId);
     
     const params = new URLSearchParams({
       mode: 'manual',
@@ -181,7 +188,14 @@ export default function Home() {
                   <div className="result-title">{song.trackName}</div>
                   <div className="result-artist">{song.artistName}</div>
                 </div>
-                <div className="btn" style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}>Play</div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
+                  {song.source && (
+                    <span style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '1px' }}>
+                      {song.source}
+                    </span>
+                  )}
+                  <div className="btn" style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}>Play</div>
+                </div>
               </div>
             ))}
           </div>
@@ -194,11 +208,11 @@ export default function Home() {
             <strong>Tip:</strong> You don't have to fill out both fields! If you only want to provide custom lyrics (and auto-find the video), OR if you only want to provide a custom YouTube video (and auto-find the lyrics), just fill what you want here and then search for your song using the <strong>Auto Find</strong> tab!
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text)' }}>YouTube Video ID</label>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text)' }}>YouTube Video ID or URL</label>
             <input
               type="text"
               className="input"
-              placeholder="e.g. dQw4w9WgXcQ"
+              placeholder="e.g. dQw4w9WgXcQ or https://youtube.com/watch?v=..."
               value={manualYoutubeId}
               onChange={(e) => setManualYoutubeId(e.target.value)}
             />

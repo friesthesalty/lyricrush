@@ -5,9 +5,10 @@ interface SettingsPanelProps {
   settings: Settings;
   updateSettings: (newSettings: Partial<Settings>) => void;
   onClose: () => void;
+  debugInfo?: any;
 }
 
-export default function SettingsPanel({ settings, updateSettings, onClose }: SettingsPanelProps) {
+export default function SettingsPanel({ settings, updateSettings, onClose, debugInfo }: SettingsPanelProps) {
   const [activeKeyIndex, setActiveKeyIndex] = useState<number | null>(null);
 
   useEffect(() => {
@@ -68,6 +69,22 @@ export default function SettingsPanel({ settings, updateSettings, onClose }: Set
             ))}
           </div>
         </div>
+
+        {debugInfo && (
+          <div className="settings-section" style={{ marginTop: '2rem' }}>
+            <label>Debug Info</label>
+            <pre style={{ 
+              fontSize: '0.75rem', 
+              background: 'rgba(0,0,0,0.5)', 
+              padding: '0.5rem', 
+              overflowX: 'auto', 
+              maxHeight: '200px',
+              color: '#0f0' 
+            }}>
+              {JSON.stringify(debugInfo, null, 2)}
+            </pre>
+          </div>
+        )}
 
         <button className="btn" style={{ width: '100%', marginTop: '1rem' }} onClick={onClose}>
           Done

@@ -50,9 +50,12 @@ function GameContent() {
   const offsetMs = parseInt(searchParams.get('offset') || '0', 10);
 
   const [loading, setLoading] = useState(true);
+  const [loadProgress, setLoadProgress] = useState(10);
+  const [loadMessage, setLoadMessage] = useState('Initializing...');
   const [error, setError] = useState('');
   const [lyrics, setLyrics] = useState<LyricLine[]>([]);
   const [videoId, setVideoId] = useState('');
+  const [ytDebug, setYtDebug] = useState<any>(null);
   
   const [gameState, setGameState] = useState<'playing' | 'ended'>('playing');
   const [isPaused, setIsPaused] = useState(false);
@@ -142,6 +145,9 @@ function GameContent() {
           return;
         }
 
+        setLoadProgress(50);
+        setLoadMessage('Parsing manual input...');
+
         const parsedLyrics = parseLrc(rawLrc);
         if (parsedLyrics.length === 0) {
           setError('Could not parse the provided LRC data.');
@@ -153,6 +159,7 @@ function GameContent() {
         lyricsRef.current = parsedLyrics;
         buildMarkovChain(parsedLyrics);
         setVideoId(ytId);
+        setLoadProgress(100);
         setLoading(false);
         return;
       }
@@ -165,14 +172,21 @@ function GameContent() {
       }
 
       try {
+        setLoadProgress(30);
+        setLoadMessage('Finding optimal audio source...');
         let ytId: string | null = sessionStorage.getItem('manual_youtube_id');
         if (!ytId) {
-          const ytRes = await fetch(`/api/yt-search?q=${encodeURIComponent(artistName + ' ' + trackName + ' audio')}`);
+          const safeArtist = artistName || '';
+          const safeTrack = trackName || '';
+          const ytRes = await fetch(`/api/yt-search?q=${encodeURIComponent(safeArtist + ' ' + safeTrack + ' audio')}&artist=${encodeURIComponent(safeArtist)}&track=${encodeURIComponent(safeTrack)}`);
           const ytData = await ytRes.json();
           if (!ytData.videoId) throw new Error('Video not found');
           ytId = ytData.videoId as string;
+          if (ytData.debug) setYtDebug(ytData.debug);
         }
         
+        setLoadProgress(60);
+        setLoadMessage('Downloading synced lyrics...');
         let rawLrc = sessionStorage.getItem('manual_lrc');
         if (!rawLrc) {
           const lrcRes = await fetch(`/api/lyrics?track_name=${encodeURIComponent(trackName)}&artist_name=${encodeURIComponent(artistName)}`);
@@ -184,6 +198,8 @@ function GameContent() {
           rawLrc = lrcData[0].syncedLyrics;
         }
 
+        setLoadProgress(90);
+        setLoadMessage('Building game data...');
         const parsedLyrics = parseLrc(rawLrc as string);
         if (parsedLyrics.length === 0) {
           throw new Error('Could not parse synced lyrics');
@@ -193,6 +209,7 @@ function GameContent() {
         lyricsRef.current = parsedLyrics;
         buildMarkovChain(parsedLyrics);
         setVideoId(ytId as string);
+        setLoadProgress(100);
       } catch (err: any) {
         setError(err.message || 'Failed to load game');
       } finally {
@@ -556,6 +573,7 @@ function GameContent() {
     if (!playerRef.current) return;
     playerRef.current.seekTo(0, true);
     playerRef.current.playVideo();
+    setGameState('playing');
     setIsPaused(false);
     setScore(0);
     setStats({ perfect: 0, great: 0, good: 0, miss: 0 });
@@ -563,6 +581,7 @@ function GameContent() {
     setQuestion(null);
     questionRef.current = null;
     askedQuestionsRef.current = new Set();
+    pastTargetsRef.current = new Set();
     setSkippedToIndex(-1);
   }, []);
 
@@ -615,7 +634,10 @@ function GameContent() {
     return (
       <main className="game-container">
         <h2 className="title">Loading Game...</h2>
-        <div className="spinner"></div>
+        <div style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>{loadMessage}</div>
+        <div style={{ width: '100%', maxWidth: '300px', height: '6px', background: 'var(--surface-hover)', borderRadius: '3px', overflow: 'hidden' }}>
+          <div style={{ width: `${loadProgress}%`, height: '100%', background: 'var(--primary)', transition: 'width 0.3s ease-out' }}></div>
+        </div>
       </main>
     );
   }
@@ -636,10 +658,40 @@ function GameContent() {
   }
 
   if (gameState === 'ended') {
+    const totalNotes = stats.perfect + stats.great + stats.good + stats.miss;
+    const maxScore = totalNotes * 100;
+    const accuracy = maxScore > 0 ? (score / maxScore) * 100 : 0;
+    
+    let grade = 'F';
+    let gradeColor = 'var(--error)';
+    if (accuracy >= 95) { grade = 'S'; gradeColor = 'var(--perfect)'; }
+    else if (accuracy >= 85) { grade = 'A'; gradeColor = 'var(--great)'; }
+    else if (accuracy >= 75) { grade = 'B'; gradeColor = 'var(--good)'; }
+    else if (accuracy >= 65) { grade = 'C'; gradeColor = '#f59e0b'; }
+    else if (accuracy >= 50) { grade = 'D'; gradeColor = 'var(--text-main)'; }
+
+    const isFC = totalNotes > 0 && stats.miss === 0;
+    const isAP = totalNotes > 0 && stats.perfect === totalNotes;
+
     return (
       <main className="game-container">
         <div className="scoreboard">
           <h2>Song Complete!</h2>
+          
+          <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+            <div style={{ fontSize: '5rem', fontWeight: 900, color: gradeColor, textShadow: `0 0 20px ${gradeColor}80` }}>
+              {grade}
+            </div>
+            <div style={{ fontSize: '1.5rem', color: 'var(--text-main)', marginTop: '0.5rem' }}>
+              {accuracy.toFixed(2)}%
+            </div>
+            {isAP ? (
+              <div style={{ marginTop: '1rem', color: 'var(--perfect)', fontWeight: 800, fontSize: '1.2rem', letterSpacing: '2px', animation: 'pulse-glow 1.5s infinite' }}>ALL PERFECT</div>
+            ) : isFC ? (
+              <div style={{ marginTop: '1rem', color: 'var(--good)', fontWeight: 800, fontSize: '1.2rem', letterSpacing: '2px' }}>FULL COMBO</div>
+            ) : null}
+          </div>
+
           <div className="stat-row perfect">
             <span>Perfect</span>
             <span>{stats.perfect}</span>
@@ -660,9 +712,14 @@ function GameContent() {
             <span>Total Score</span>
             <span>{score}</span>
           </div>
-          <button className="btn" style={{ width: '100%', marginTop: '2rem' }} onClick={() => router.push('/')}>
-            Play Again
-          </button>
+          <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+            <button className="btn" style={{ flex: 1 }} onClick={restartSong}>
+              Play Again
+            </button>
+            <button className="btn" style={{ flex: 1, background: 'var(--surface-hover)' }} onClick={() => router.push('/')}>
+              Go Home
+            </button>
+          </div>
         </div>
       </main>
     );
@@ -671,6 +728,10 @@ function GameContent() {
   const activeLyric = currentLineIndex >= 0 ? lyrics[currentLineIndex].text : '...';
   const nextLyric = currentLineIndex + 1 < lyrics.length ? lyrics[currentLineIndex + 1].text : '';
   const keyLabels = settings.keybinds.map(k => k.toUpperCase());
+  
+  const currentTotalNotes = stats.perfect + stats.great + stats.good + stats.miss;
+  const currentMaxScore = currentTotalNotes * 100;
+  const currentAccuracy = currentMaxScore > 0 ? (score / currentMaxScore) * 100 : 100;
 
   return (
     <main className="game-container">
@@ -690,16 +751,36 @@ function GameContent() {
         </div>
       )}
 
-      {showSettings && <SettingsPanel settings={settings} updateSettings={updateSettings} onClose={() => setShowSettings(false)} />}
+      {showSettings && (
+        <SettingsPanel 
+          settings={settings} 
+          updateSettings={updateSettings} 
+          onClose={() => setShowSettings(false)}
+          debugInfo={{
+            videoId,
+            gameState,
+            score,
+            lyricsCount: lyrics.length,
+            firstFewLyrics: lyrics.slice(0, 2),
+            playerState: playerRef.current?.getPlayerState?.() ?? 'not ready',
+            youtubeSearchData: ytDebug
+          }}
+        />
+      )}
 
       <button 
         className="btn" 
-        style={{ position: 'absolute', top: '2rem', left: '2rem', padding: '0.5rem 1rem', fontSize: '1rem' }}
-        onClick={() => router.push('/')}
+        style={{ position: 'absolute', top: '2rem', left: '2rem', padding: '0.5rem 1rem', fontSize: '1rem', zIndex: 100 }}
+        onClick={togglePause}
       >
         &larr; Back
       </button>
-      <div className="score-hud">Score: {score}</div>
+      <div className="score-hud">
+        Score: {score} 
+        <span style={{ fontSize: '1rem', marginLeft: '10px', color: 'var(--text-muted)' }}>
+          {currentAccuracy.toFixed(2)}%
+        </span>
+      </div>
       
       {/* Hidden YT Player wrapped to prevent React from resetting the iframe during re-renders */}
       <div 

@@ -7,7 +7,7 @@ export interface Settings {
 
 const defaultSettings: Settings = {
   volume: 100,
-  keybinds: ['e', 'i', 'd', 'k'],
+  keybinds: ['e', 'i', 'd', 'j'],
 };
 
 export function useSettings() {

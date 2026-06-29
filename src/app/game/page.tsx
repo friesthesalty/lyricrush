@@ -96,6 +96,7 @@ function GameContent() {
   }, [gameState]);
 
   const ignoreGameLogicUntilRef = useRef(0);
+  const loopStartedRef = useRef(false);
 
   const [sessionTargets, setSessionTargets] = useState<{ target: number; activate: number }[]>([]);
   const durationRef = useRef(0);
@@ -366,18 +367,13 @@ function GameContent() {
             startGameLoop();
           },
           onStateChange: (event: any) => {
-            if (event.data === window.YT.PlayerState.PLAYING) {
-              if (!reqRef.current) startGameLoop();
-            } else if (event.data === window.YT.PlayerState.ENDED) {
-              if (reqRef.current) {
-                cancelAnimationFrame(reqRef.current);
-                reqRef.current = undefined;
-              }
-              setGameState('ended');
-            } else {
-              if (reqRef.current) {
-                cancelAnimationFrame(reqRef.current);
-                reqRef.current = undefined;
+            if (event.data === window.YT.PlayerState.ENDED) {
+              if (Date.now() < ignoreGameLogicUntilRef.current) return;
+              if (gameStateRef.current === 'calibration') {
+                event.target.seekTo(0, true);
+                event.target.playVideo();
+              } else {
+                setGameState('ended');
               }
             }
           }
@@ -543,11 +539,17 @@ function GameContent() {
   };
 
   const startGameLoop = () => {
+    if (loopStartedRef.current) return;
+    loopStartedRef.current = true;
+
     const loop = () => {
-      if (!playerRef.current || !playerRef.current.getCurrentTime) return;
+      reqRef.current = requestAnimationFrame(loop);
+
+      if (!playerRef.current || !playerRef.current.getCurrentTime || !playerRef.current.getPlayerState) return;
       
-      if (gameStateRef.current === 'calibration' || Date.now() < ignoreGameLogicUntilRef.current) {
-        reqRef.current = requestAnimationFrame(loop);
+      if (playerRef.current.getPlayerState() !== window.YT.PlayerState.PLAYING) return;
+
+      if (gameStateRef.current === 'calibration' || gameStateRef.current === 'ended' || Date.now() < ignoreGameLogicUntilRef.current) {
         return;
       }
 
@@ -587,9 +589,10 @@ function GameContent() {
         }
       }
 
-      if (newIndex !== currentLineIndex) {
-        setCurrentLineIndex(newIndex);
-      }
+      setCurrentLineIndex(prev => {
+        if (prev === newIndex) return prev;
+        return newIndex;
+      });
 
       const nextIndex = newIndex + 1;
       
@@ -635,7 +638,6 @@ function GameContent() {
         }
       }
 
-      reqRef.current = requestAnimationFrame(loop);
     };
     reqRef.current = requestAnimationFrame(loop);
   };
@@ -810,6 +812,7 @@ function GameContent() {
       }
 
       if (e.key === 'Escape') {
+        if (showSettings) return;
         togglePause();
         return;
       }
@@ -823,7 +826,7 @@ function GameContent() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleAnswer, isPaused, togglePause, settings.keybinds, gameState, calibrationLyricIndex, calibrationTaps, setOffsetMs]);
+  }, [handleAnswer, isPaused, togglePause, settings.keybinds, gameState, calibrationLyricIndex, calibrationTaps, setOffsetMs, showSettings]);
 
   if (loading) {
     return (
@@ -852,24 +855,44 @@ function GameContent() {
     );
   }
 
-  if (gameState === 'ended') {
-    const totalNotes = stats.perfect + stats.great + stats.good + stats.miss;
-    const maxScore = totalNotes * 100;
-    const accuracy = maxScore > 0 ? (score / maxScore) * 100 : 0;
-    
-    let grade = 'F';
-    let gradeColor = 'var(--error)';
-    if (accuracy >= 95) { grade = 'S'; gradeColor = 'var(--perfect)'; }
-    else if (accuracy >= 85) { grade = 'A'; gradeColor = 'var(--great)'; }
-    else if (accuracy >= 75) { grade = 'B'; gradeColor = 'var(--good)'; }
-    else if (accuracy >= 65) { grade = 'C'; gradeColor = '#f59e0b'; }
-    else if (accuracy >= 50) { grade = 'D'; gradeColor = 'var(--text-main)'; }
+  const totalNotes = stats.perfect + stats.great + stats.good + stats.miss;
+  const maxScore = totalNotes * 100;
+  const accuracy = maxScore > 0 ? (score / maxScore) * 100 : 0;
+  
+  let grade = 'F';
+  let gradeColor = 'var(--error)';
+  if (accuracy >= 95) { grade = 'S'; gradeColor = 'var(--perfect)'; }
+  else if (accuracy >= 85) { grade = 'A'; gradeColor = 'var(--great)'; }
+  else if (accuracy >= 75) { grade = 'B'; gradeColor = 'var(--good)'; }
+  else if (accuracy >= 65) { grade = 'C'; gradeColor = '#f59e0b'; }
+  else if (accuracy >= 50) { grade = 'D'; gradeColor = 'var(--text-main)'; }
 
-    const isFC = totalNotes > 0 && stats.miss === 0;
-    const isAP = totalNotes > 0 && stats.perfect === totalNotes;
+  const isFC = totalNotes > 0 && stats.miss === 0;
+  const isAP = totalNotes > 0 && stats.perfect === totalNotes;
 
-    return (
-      <main className="game-container">
+  const activeLyric = currentLineIndex >= 0 ? lyrics[currentLineIndex].text : '...';
+  const nextLyric = currentLineIndex + 1 < lyrics.length ? lyrics[currentLineIndex + 1].text : '';
+  const keyLabels = settings.keybinds.map(k => k.toUpperCase());
+  
+  const currentTotalNotes = stats.perfect + stats.great + stats.good + stats.miss;
+  const currentMaxScore = currentTotalNotes * 100;
+  const currentAccuracy = currentMaxScore > 0 ? (score / currentMaxScore) * 100 : 100;
+
+  return (
+    <main className="game-container">
+      {/* Hidden YT Player wrapped to prevent React from resetting the iframe during re-renders */}
+      <div 
+        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }} 
+        ref={(el) => {
+          if (el && !document.getElementById('yt-player')) {
+            const child = document.createElement('div');
+            child.id = 'yt-player';
+            el.appendChild(child);
+          }
+        }}
+      />
+
+      {gameState === 'ended' ? (
         <div className="scoreboard">
           <h2>Song Complete!</h2>
           
@@ -916,131 +939,107 @@ function GameContent() {
             </button>
           </div>
         </div>
-      </main>
-    );
-  }
+      ) : (
+        <>
+          <div className="progress-bar-container">
+            <div className="progress-bar-fill" ref={progressRef}></div>
+            {videoDuration > 0 && sessionTargets.map((session, idx) => {
+              const adjustedActivate = session.activate - (offsetMs / 1000);
+              const leftPercent = Math.max(0, Math.min((adjustedActivate / videoDuration) * 100, 100));
+              return (
+                <div 
+                  key={idx}
+                  style={{
+                    position: 'absolute',
+                    left: `${leftPercent}%`,
+                    top: 0,
+                    bottom: 0,
+                    width: '3px',
+                    background: 'rgba(255, 255, 255, 0.4)',
+                    boxShadow: '0 0 4px rgba(255, 255, 255, 0.8)',
+                    zIndex: 60,
+                    transform: 'translateX(-50%)'
+                  }}
+                />
+              );
+            })}
+          </div>
 
-  const activeLyric = currentLineIndex >= 0 ? lyrics[currentLineIndex].text : '...';
-  const nextLyric = currentLineIndex + 1 < lyrics.length ? lyrics[currentLineIndex + 1].text : '';
-  const keyLabels = settings.keybinds.map(k => k.toUpperCase());
-  
-  const currentTotalNotes = stats.perfect + stats.great + stats.good + stats.miss;
-  const currentMaxScore = currentTotalNotes * 100;
-  const currentAccuracy = currentMaxScore > 0 ? (score / currentMaxScore) * 100 : 100;
+          {isPaused && (
+            <div className="pause-overlay">
+              <div className="pause-menu">
+                <h2>Paused</h2>
+                <button className="btn" onClick={togglePause}>Resume</button>
+                <button className="btn" onClick={restartSong} style={{ background: '#f59e0b' }}>Restart Song</button>
+                <button className="btn" onClick={enterCalibration} style={{ background: '#3b82f6' }}>Calibrate Offset</button>
+                <button className="btn" onClick={() => setShowSettings(true)} style={{ background: 'var(--primary)' }}>Settings</button>
+                <button className="btn" onClick={() => router.push('/')} style={{ background: 'var(--surface-hover)' }}>Quit to Menu</button>
+              </div>
+            </div>
+          )}
 
-  return (
-    <main className="game-container">
-      <div className="progress-bar-container">
-        <div className="progress-bar-fill" ref={progressRef}></div>
-        {videoDuration > 0 && sessionTargets.map((session, idx) => {
-          const adjustedActivate = session.activate - (offsetMs / 1000);
-          const leftPercent = Math.max(0, Math.min((adjustedActivate / videoDuration) * 100, 100));
-          return (
-            <div 
-              key={idx}
-              style={{
-                position: 'absolute',
-                left: `${leftPercent}%`,
-                top: 0,
-                bottom: 0,
-                width: '3px',
-                background: 'rgba(255, 255, 255, 0.4)',
-                boxShadow: '0 0 4px rgba(255, 255, 255, 0.8)',
-                zIndex: 60,
-                transform: 'translateX(-50%)'
+          {gameState === 'calibration' && (
+            <div className="calibration-overlay" style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.85)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+              <h2 style={{ fontSize: '2.5rem', marginBottom: '1rem', color: 'var(--primary)' }}>Calibration Mode</h2>
+              <p style={{ fontSize: '1.2rem', marginBottom: '2rem', textAlign: 'center', maxWidth: '600px', lineHeight: 1.5 }}>
+                Listen to the song and press <strong style={{ color: 'var(--good)' }}>SPACE</strong> exactly when you hear the singer start this lyric line:<br/>
+              </p>
+              <div style={{ fontSize: '4rem', fontWeight: 'bold', marginBottom: '1rem', color: 'var(--good)', textShadow: '0 0 20px rgba(74, 222, 128, 0.5)' }}>
+                {offsetMs > 0 ? '+' : ''}{offsetMs} ms
+              </div>
+              <div style={{ fontSize: '1rem', color: 'var(--text-muted)', marginBottom: '3rem' }}>
+                ({calibrationTaps.length > 0 ? `Averaged over last ${calibrationTaps.length} taps` : 'Tap SPACE to start calibrating'})
+                <br/>
+                <span style={{ fontSize: '0.9rem', opacity: 0.7 }}>(Use Left/Right Arrows to seek audio backward/forward)</span>
+              </div>
+              <button className="btn" onClick={finishCalibration} style={{ padding: '1rem 3rem', fontSize: '1.2rem' }}>Done</button>
+              
+              <div style={{ marginTop: '3rem', fontSize: '1.5rem', color: 'var(--text-main)', background: 'rgba(255,255,255,0.1)', padding: '1.5rem 3rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.2)' }}>
+                 {lyrics[calibrationLyricIndex]?.text || '...'}
+              </div>
+            </div>
+          )}
+
+          {showSettings && (
+            <SettingsPanel 
+              settings={settings} 
+              updateSettings={updateSettings} 
+              onClose={() => setShowSettings(false)}
+              debugInfo={{
+                videoId,
+                gameState,
+                score,
+                lyricsCount: lyrics.length,
+                firstFewLyrics: lyrics.slice(0, 2),
+                playerState: playerRef.current?.getPlayerState?.() ?? 'not ready',
+                youtubeSearchData: ytDebug
               }}
             />
-          );
-        })}
-      </div>
+          )}
 
-      {isPaused && (
-        <div className="pause-overlay">
-          <div className="pause-menu">
-            <h2>Paused</h2>
-            <button className="btn" onClick={togglePause}>Resume</button>
-            <button className="btn" onClick={restartSong} style={{ background: '#f59e0b' }}>Restart Song</button>
-            <button className="btn" onClick={enterCalibration} style={{ background: '#3b82f6' }}>Calibrate Offset</button>
-            <button className="btn" onClick={() => setShowSettings(true)} style={{ background: 'var(--primary)' }}>Settings</button>
-            <button className="btn" onClick={() => router.push('/')} style={{ background: 'var(--surface-hover)' }}>Quit to Menu</button>
+          <button 
+            className="btn" 
+            style={{ position: 'absolute', top: '2rem', left: '2rem', padding: '0.5rem 1rem', fontSize: '1rem', zIndex: 100 }}
+            onClick={() => {
+              if (gameState === 'calibration') {
+                 const urlOffset = searchParams.get('offset');
+                 setOffsetMs(urlOffset ? parseInt(urlOffset, 10) : 0);
+                 setGameState('playing');
+                 setIsPaused(true);
+                 playerRef.current?.pauseVideo?.();
+              } else {
+                 togglePause();
+              }
+            }}
+          >
+            &larr; Back
+          </button>
+          <div className="score-hud">
+            Score: {score} 
+            <span style={{ fontSize: '1rem', marginLeft: '10px', color: 'var(--text-muted)' }}>
+              {currentAccuracy.toFixed(2)}%
+            </span>
           </div>
-        </div>
-      )}
-
-      {gameState === 'calibration' && (
-        <div className="calibration-overlay" style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.85)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-          <h2 style={{ fontSize: '2.5rem', marginBottom: '1rem', color: 'var(--primary)' }}>Calibration Mode</h2>
-          <p style={{ fontSize: '1.2rem', marginBottom: '2rem', textAlign: 'center', maxWidth: '600px', lineHeight: 1.5 }}>
-            Listen to the song and press <strong style={{ color: 'var(--good)' }}>SPACE</strong> exactly when you hear the singer start this lyric line:<br/>
-          </p>
-          <div style={{ fontSize: '4rem', fontWeight: 'bold', marginBottom: '1rem', color: 'var(--good)', textShadow: '0 0 20px rgba(74, 222, 128, 0.5)' }}>
-            {offsetMs > 0 ? '+' : ''}{offsetMs} ms
-          </div>
-          <div style={{ fontSize: '1rem', color: 'var(--text-muted)', marginBottom: '3rem' }}>
-            ({calibrationTaps.length > 0 ? `Averaged over last ${calibrationTaps.length} taps` : 'Tap SPACE to start calibrating'})
-            <br/>
-            <span style={{ fontSize: '0.9rem', opacity: 0.7 }}>(Use Left/Right Arrows to seek audio backward/forward)</span>
-          </div>
-          <button className="btn" onClick={finishCalibration} style={{ padding: '1rem 3rem', fontSize: '1.2rem' }}>Done</button>
-          
-          <div style={{ marginTop: '3rem', fontSize: '1.5rem', color: 'var(--text-main)', background: 'rgba(255,255,255,0.1)', padding: '1.5rem 3rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.2)' }}>
-             {lyrics[calibrationLyricIndex]?.text || '...'}
-          </div>
-        </div>
-      )}
-
-      {showSettings && (
-        <SettingsPanel 
-          settings={settings} 
-          updateSettings={updateSettings} 
-          onClose={() => setShowSettings(false)}
-          debugInfo={{
-            videoId,
-            gameState,
-            score,
-            lyricsCount: lyrics.length,
-            firstFewLyrics: lyrics.slice(0, 2),
-            playerState: playerRef.current?.getPlayerState?.() ?? 'not ready',
-            youtubeSearchData: ytDebug
-          }}
-        />
-      )}
-
-      <button 
-        className="btn" 
-        style={{ position: 'absolute', top: '2rem', left: '2rem', padding: '0.5rem 1rem', fontSize: '1rem', zIndex: 100 }}
-        onClick={() => {
-          if (gameState === 'calibration') {
-             const urlOffset = searchParams.get('offset');
-             setOffsetMs(urlOffset ? parseInt(urlOffset, 10) : 0);
-             setGameState('playing');
-             setIsPaused(true);
-             playerRef.current?.pauseVideo?.();
-          } else {
-             togglePause();
-          }
-        }}
-      >
-        &larr; Back
-      </button>
-      <div className="score-hud">
-        Score: {score} 
-        <span style={{ fontSize: '1rem', marginLeft: '10px', color: 'var(--text-muted)' }}>
-          {currentAccuracy.toFixed(2)}%
-        </span>
-      </div>
-      
-      {/* Hidden YT Player wrapped to prevent React from resetting the iframe during re-renders */}
-      <div 
-        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }} 
-        ref={(el) => {
-          if (el && !document.getElementById('yt-player')) {
-            const child = document.createElement('div');
-            child.id = 'yt-player';
-            el.appendChild(child);
-          }
-        }}
-      />
 
       {hitEffects.map(hit => (
         <div key={hit.id} className={`hit-effect hit-${hit.type}`}>
@@ -1145,6 +1144,8 @@ function GameContent() {
             })}
           </div>
         </div>
+      )}
+        </>
       )}
     </main>
   );

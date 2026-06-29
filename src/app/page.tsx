@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSettings } from '../lib/useSettings';
 import SettingsPanel from '../components/SettingsPanel';
+import versionInfo from '../version.json';
 
 interface SearchResult {
   trackId: string | number;
@@ -131,6 +132,9 @@ export default function Home() {
       >
         ⚙️
       </button>
+      <div style={{ position: 'fixed', top: '1rem', left: '1rem', fontSize: '0.8rem', color: 'var(--text-muted)', zIndex: 10, pointerEvents: 'none' }}>
+        Commit: {versionInfo.hash} - {versionInfo.message}
+      </div>
       {showSettings && <SettingsPanel settings={settings} updateSettings={updateSettings} onClose={() => setShowSettings(false)} />}
       <h1 className="title">LyricRush</h1>
       <p className="subtitle">Can you guess the next line before it drops?</p>

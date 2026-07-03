@@ -47,6 +47,7 @@ function GameContent() {
   
   const trackName = searchParams.get('trackName');
   const artistName = searchParams.get('artistName');
+  const artworkUrl = searchParams.get('artworkUrl');
   const [offsetMsState, setOffsetMsState] = useState(() => parseInt(searchParams.get('offset') || '0', 10));
   const offsetMsRef = useRef(offsetMsState);
   
@@ -896,6 +897,14 @@ function GameContent() {
         <div className="scoreboard">
           <h2>Song Complete!</h2>
           
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', justifyContent: 'center', marginBottom: '2rem', background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
+            {artworkUrl && <img src={artworkUrl} alt={trackName || 'Cover'} style={{ width: '80px', height: '80px', borderRadius: '8px', objectFit: 'cover' }} />}
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{trackName || 'Custom Track'}</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '1.1rem', marginTop: '0.25rem' }}>{artistName || 'Unknown Artist'}</div>
+            </div>
+          </div>
+
           <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
             <div style={{ fontSize: '5rem', fontWeight: 900, color: gradeColor, textShadow: `0 0 20px ${gradeColor}80` }}>
               {grade}

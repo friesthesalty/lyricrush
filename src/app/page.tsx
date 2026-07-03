@@ -102,6 +102,9 @@ export default function Home() {
       artistName: song.artistName,
       offset: offsetMs.toString(),
     });
+    if (song.artworkUrl100) {
+      params.append('artworkUrl', song.artworkUrl100);
+    }
     router.push(`/game?${params.toString()}`);
   };
 

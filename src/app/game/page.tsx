@@ -897,48 +897,67 @@ function GameContent() {
         <div className="scoreboard">
           <h2>Song Complete!</h2>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', justifyContent: 'center', marginBottom: '2rem', background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
-            {artworkUrl && <img src={artworkUrl} alt={trackName || 'Cover'} style={{ width: '80px', height: '80px', borderRadius: '8px', objectFit: 'cover' }} />}
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{trackName || 'Custom Track'}</div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '1.1rem', marginTop: '0.25rem' }}>{artistName || 'Unknown Artist'}</div>
+          <div style={{ display: 'flex', gap: '3rem', alignItems: 'stretch' }}>
+            
+            {/* Left Column: Big Album Cover + Name/Artist */}
+            <div style={{ flex: '0 0 250px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              {artworkUrl ? (
+                <img src={artworkUrl.replace('100x100', '300x300')} alt={trackName || 'Cover'} style={{ width: '250px', height: '250px', borderRadius: '12px', objectFit: 'cover', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} />
+              ) : (
+                <div style={{ width: '250px', height: '250px', borderRadius: '12px', background: 'var(--surface-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>No Cover</div>
+              )}
+              <div style={{ textAlign: 'center', marginTop: '1.5rem', width: '100%' }}>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{trackName || 'Custom Track'}</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '1.1rem', marginTop: '0.25rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{artistName || 'Unknown Artist'}</div>
+              </div>
             </div>
+
+            {/* Right Column: Score Display */}
+            <div style={{ flex: '1', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '1rem', marginBottom: '1rem' }}>
+                <div style={{ fontSize: '5rem', fontWeight: 900, color: gradeColor, textShadow: `0 0 20px ${gradeColor}80`, lineHeight: 1 }}>
+                  {grade}
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '2rem', color: 'var(--text-main)', fontWeight: 'bold' }}>
+                    {accuracy.toFixed(2)}%
+                  </div>
+                  {isAP ? (
+                    <div style={{ marginTop: '0.5rem', color: 'var(--perfect)', fontWeight: 800, fontSize: '1rem', letterSpacing: '2px', animation: 'pulse-glow 1.5s infinite' }}>ALL PERFECT</div>
+                  ) : isFC ? (
+                    <div style={{ marginTop: '0.5rem', color: 'var(--good)', fontWeight: 800, fontSize: '1rem', letterSpacing: '2px' }}>FULL COMBO</div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="stat-row perfect" style={{ marginBottom: 0 }}>
+                  <span>Perfect</span>
+                  <span>{stats.perfect}</span>
+                </div>
+                <div className="stat-row great" style={{ marginBottom: 0 }}>
+                  <span>Great</span>
+                  <span>{stats.great}</span>
+                </div>
+                <div className="stat-row good" style={{ marginBottom: 0 }}>
+                  <span>Good</span>
+                  <span>{stats.good}</span>
+                </div>
+                <div className="stat-row miss" style={{ marginBottom: 0 }}>
+                  <span>Miss</span>
+                  <span>{stats.miss}</span>
+                </div>
+              </div>
+
+              <div className="stat-row" style={{ fontWeight: 800, marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                <span>Total Score</span>
+                <span>{score}</span>
+              </div>
+            </div>
+
           </div>
 
-          <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-            <div style={{ fontSize: '5rem', fontWeight: 900, color: gradeColor, textShadow: `0 0 20px ${gradeColor}80` }}>
-              {grade}
-            </div>
-            <div style={{ fontSize: '1.5rem', color: 'var(--text-main)', marginTop: '0.5rem' }}>
-              {accuracy.toFixed(2)}%
-            </div>
-            {isAP ? (
-              <div style={{ marginTop: '1rem', color: 'var(--perfect)', fontWeight: 800, fontSize: '1.2rem', letterSpacing: '2px', animation: 'pulse-glow 1.5s infinite' }}>ALL PERFECT</div>
-            ) : isFC ? (
-              <div style={{ marginTop: '1rem', color: 'var(--good)', fontWeight: 800, fontSize: '1.2rem', letterSpacing: '2px' }}>FULL COMBO</div>
-            ) : null}
-          </div>
-
-          <div className="stat-row perfect">
-            <span>Perfect</span>
-            <span>{stats.perfect}</span>
-          </div>
-          <div className="stat-row great">
-            <span>Great</span>
-            <span>{stats.great}</span>
-          </div>
-          <div className="stat-row good">
-            <span>Good</span>
-            <span>{stats.good}</span>
-          </div>
-          <div className="stat-row miss">
-            <span>Miss</span>
-            <span>{stats.miss}</span>
-          </div>
-          <div className="stat-row" style={{ fontWeight: 800, marginTop: '2rem' }}>
-            <span>Total Score</span>
-            <span>{score}</span>
-          </div>
           <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
             <button className="btn" style={{ flex: 1 }} onClick={restartSong}>
               Play Again
